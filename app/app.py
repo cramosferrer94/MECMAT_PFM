@@ -37,7 +37,7 @@ def prepare_features(input_data, historical_data):
     input_data["moving_avg_3"] = input_data["PROD_ID"].map(mv3)
     input_data["moving_avg_6"] = input_data["PROD_ID"].map(mv6)
 
-    input_data.fillna(method='ffill', inplace=True)
+    input_data.ffill(inplace=True)
     features = ["YEAR", "MONTH", "TIRE_SALES", "PROD_AVG_DEMAND", "lag1", "moving_avg_3", "moving_avg_6"]
     return input_data[features]
 
@@ -88,11 +88,15 @@ def predict():
     response = {
         "month": month,
         "predictions": [
-            {"PROD_ID": int(r['PROD_ID']), "PREDICTED_DEMAND_QUANT": int(r['PREDICTED_DEMAND_QUANT'])}
-            for _, r in df.iterrows()
+            {
+                "PROD_ID": int(r.PROD_ID),
+                "TIRE_SALES": int(r.TIRE_SALES),
+                "PREDICTED_DEMAND_QUANT": int(p)
+            }
+            for r, p in zip(df.itertuples(index=False), preds)
         ],
-        "capacity": {"value": cap_pct, "overload": overload_flag},
-        "alerts": alerts
+        "capacity": {"value": round(cap_pct,2), "overload": bool(overload_flag)},
+        "alerts": [month] if bool(overload_flag) else []
     }
     return jsonify(response)
 
@@ -101,26 +105,32 @@ def retrain():
     data = request.get_json()
     month = data.get('month')
     records = data.get('data', [])
+
     if not month or not records:
         return jsonify({"error": "Invalid payload: 'month' and 'data' required."}), 400
 
-    # Append to historical CSV
+    # Construir DataFrame y adaptar columnas al esquema original
+    new = pd.DataFrame(records)
+    new.rename(columns={"PREVIOUS_MONTH_SALES": "TIRE_SALES"}, inplace=True)
+    new["DEMAND_DATE"] = pd.to_datetime(month).strftime("%Y-%m")
+
+    # Leer y actualizar CSV histórico
     hist_path = "app/HISTORICAL DATA.csv"
     hist = pd.read_csv(hist_path)
-    new = pd.DataFrame(records)
-    new['DEMAND_DATE'] = pd.to_datetime(month, format="%Y-%m")
     hist = pd.concat([hist, new], ignore_index=True)
     hist.to_csv(hist_path, index=False)
+    hist.to_csv("app/static/data/HISTORICAL DATA.csv", index=False)
+
+    # Asegurar formato de fecha para el cálculo de ventana
+    hist["DEMAND_DATE"] = pd.to_datetime(hist["DEMAND_DATE"], format="%Y-%m")
+    window_start = hist["DEMAND_DATE"].min().strftime('%Y-%m')
+    window_end   = hist["DEMAND_DATE"].max().strftime('%Y-%m')
 
     # Retrain model
     new_model = train_model()
     global model
     model = new_model
 
-    window_start = hist['DEMAND_DATE'].min().strftime('%Y-%m')
-    window_end = hist['DEMAND_DATE'].max().strftime('%Y-%m')
-    
-    hist.to_csv("static/data/HISTORICAL DATA.csv", index=False)
     metrics = load_metrics()
     return jsonify({
         "status": "ok",

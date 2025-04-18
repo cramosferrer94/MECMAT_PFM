@@ -109,6 +109,15 @@
         </div>
 
         <h1>Manufacturing Scheduling System API</h1>
+
+        <div id="month-indicator" style="text-align: center; font-weight: bold; margin-bottom: 10px;">
+            Predict or Retrain the ML Model for <span id="current-month"></span>
+        </div>
+
+        <div style="margin: 20px 0; text-align: center;">
+            <button type="button" id="btnPredict" class="toggle-btn">Predict</button>
+            <button type="button" id="btnRetrain" class="toggle-btn">Retrain</button>
+        </div>
         
         <div id="graph-section" style="margin-top: 30px;">
             <div id="graph" style="width: 100%; height: 400px;"></div>
@@ -121,17 +130,8 @@
             
         </div>        
         
-        <div style="margin: 20px 0; text-align: center;">
-            <button id="btnPredict" class="toggle-btn">Predict</button>
-            <button id="btnRetrain" class="toggle-btn">Retrain</button>
-        </div>
-
-        <p><strong>Prediction Month:</strong> <span id="predict-month">Loading...</span></p>
-        <p><strong>Retraining Month:</strong> <span id="retrain-month">Loading...</span></p>
-
         <div id="predict-section" style="display: none;">
             <h2>Predict Next Month's Demand</h2>
-            <p id="predict-month"></p>
             <table id="predict-table">
                 <thead>
                     <tr><th>PROD_ID</th><th>PREVIOUS_MONTH_SALES</th></tr>
@@ -144,7 +144,6 @@
 
         <div id="retrain-section" style="display: none;">
             <h2>Add Real Demand to Retrain</h2>
-            <p id="retrain-month"></p>
             <table id="retrain-table">
                 <thead>
                     <tr><th>PROD_ID</th><th>PREVIOUS_MONTH_SALES</th><th>DEMAND_QUANT</th></tr>
@@ -155,7 +154,31 @@
             <div class="results" id="retrain-results"></div>
         </div>
 
-    </div>
+        <div id="capacity-alert" style="
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: #f8d7da;
+        color: #721c24;
+        padding: 20px 30px;
+        border: 1px solid #f5c6cb;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        z-index: 9999;
+        text-align: center;
+        max-width: 400px;
+        ">
+        <p id="alert-text" style="margin: 0 0 12px 0;">
+            Notice: Estimated production capacity exceeds 100% for the selected month!
+        </p>
+        <button onclick="document.getElementById('capacity-alert').style.display='none'">
+        OK
+        </button>
+        </div>
+
+    </div>  
 
     <script>
         let nextMonth = null;
@@ -172,10 +195,11 @@
         }
 
         function populateTables(nextMonth) {
-            document.getElementById("predict-month").innerText = `Forecast for ${nextMonth}`;
-            document.getElementById("retrain-month").innerText = `Add data for ${nextMonth}`;
+            document.getElementById("current-month").innerText = nextMonth;
             const predictBody = document.querySelector("#predict-table tbody");
             const retrainBody = document.querySelector("#retrain-table tbody");
+            predictBody.innerHTML = "";
+            retrainBody.innerHTML = "";
             for (let i = 1; i <= 10; i++) {
                 predictBody.innerHTML += `<tr><td>${i}</td><td><input type='number' step='any' name='sales-${i}'></td></tr>`;
                 retrainBody.innerHTML += `<tr><td>${i}</td><td><input type='number' step='any' name='sales-${i}'></td><td><input type='number' step='any' name='demand-${i}'></td></tr>`;
@@ -183,17 +207,18 @@
         }
 
         function showSection(section) {
+            document.getElementById("graph-section").style.display = "none";
             document.getElementById("predict-section").style.display = section === "predict" ? "block" : "none";
             document.getElementById("retrain-section").style.display = section === "retrain" ? "block" : "none";
             document.getElementById("prediction-results").innerHTML = "";
-            document.getElementById("retrain-results").innerHTML    = "";
+            document.getElementById("retrain-results").innerHTML = "";
             }
 
         document.getElementById("btnPredict").addEventListener("click", () => showSection("predict"));
         document.getElementById("btnRetrain").addEventListener("click", () => showSection("retrain"));
 
         async function submitPrediction() {
-            const month = document.getElementById("predict-month").innerText.split(": ")[1];
+            const month = document.getElementById("current-month").innerText.trim();
             const rows  = document.querySelectorAll("#predict-table tbody tr");
             const data = Array.from(rows).map(row => ({
                 PROD_ID: parseInt(row.children[0].innerText),
@@ -207,19 +232,30 @@
             });
             const json = await res.json();
 
-            const out = json.predictions
-                .map(p => `Producto ${p.PROD_ID}: ${p.PREDICTED_DEMAND_QUANT}`)
-                .join("<br>");
-            document.getElementById("prediction-results").innerHTML = out;
-
-            if (json.capacity.overload) {
-                document.getElementById("prediction-results").innerHTML +=
-                `<br><b style="color:red">⚠️ Sobrecarga de ${json.capacity.value}% en ${json.month}</b>`;
+            if (json.capacity && json.capacity.overload) {
+                document.getElementById("alert-text").innerText = "Alert: Production Capacity for the plant is over 100%.";
+                document.getElementById("capacity-alert").style.display = "block";
             }
+
+            const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `prediction_${month}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            document.querySelectorAll("#predict-table input").forEach(input => {
+                input.value = "";
+            });
+            document.getElementById("predict-section").style.display = "none";
+            document.getElementById("graph-section").style.display = "block";
             }
 
         async function submitRetrain() {
-            const month = document.getElementById("retrain-month").innerText.split(': ')[1];
+            const month = document.getElementById("current-month").innerText.trim();
             const rows = document.querySelectorAll("#retrain-table tbody tr");
             const data = Array.from(rows).map(row => ({
                 PROD_ID: parseInt(row.children[0].innerText),
@@ -232,17 +268,24 @@
                 body: JSON.stringify({ month, data })
             });
             const json = await res.json();
-            document.getElementById("retrain-results").innerHTML = `Model retrained with window: ${json.new_training_window.start} → ${json.new_training_window.end}`;
+            let msg = `Model retrained with window: ${json.new_training_window.start} → ${json.new_training_window.end}`;
+            await loadGraphAndMetrics();
+            const lastMonthData = await fetch("/last-month").then(r => r.json());
+            const next_month = lastMonthData.next_month;
+            document.getElementById("current-month").innerText = next_month;
+            populateTables(next_month);
+            msg += "<br>Graph and metrics successfully updated.";
+            document.getElementById("retrain-results").innerHTML = msg;
+            document.getElementById("retrain-section").style.display = "none";
+            document.getElementById("graph-section").style.display = "block";
         }
 
         window.addEventListener("DOMContentLoaded", async () => {
             try {
                 const { next_month } = await fetch("/last-month").then(r => r.json());
-                document.getElementById("predict-month").innerText = `Forecast for ${next_month}`;
-                document.getElementById("retrain-month").innerText = `Add data for ${next_month}`;
+                document.getElementById("current-month").innerText = next_month;
                 populateTables(next_month);
                 await loadGraphAndMetrics();
-//                showSection("predict");
             } catch (e) {
                 console.error("Error initiating UI:", e);
             }
