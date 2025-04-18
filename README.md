@@ -7,26 +7,26 @@ This is a Flask-based web application that enables monthly demand forecasting an
 ```
 MECMAT_PFM/
 │
-├── app/                    # Core application logic and data
-│   ├── app.py              # Main Flask application (API + UI)
-│   ├── model.py            # Feature engineering and prediction utilities
-│   ├── __init__.py         # Init file for Flask app
+├── app/                       # Core application logic and data
+│   ├── app.py                 # Main Flask application (API + UI)
+│   ├── model.py               # Feature engineering and prediction utilities
+│   ├── __init__.py            # Init file for Flask app
 │   ├── HISTORICAL DATA.csv
 │   ├── PRODUCTION TIMES.csv
-│   └── static/             # Static assets
-│       ├── data/           # Duplicates of CSVs for visualization
-│       └── img/            # Logos (UOC, URV)
+│   └── static/                # Static assets
+│       ├── data/              # Duplicates of CSVs for visualization
+│       └── img/               # Logos (UOC, URV)
 │
 ├── model/
 │   ├── LR_schedule_model.pkl  # Trained linear regression model
 │   └── metrics.json           # Model evaluation metrics (MAE, RMSE, R²)
 │
 ├── templates/
-│   └── index.html          # Web UI template
+│   └── index.html             # Web UI template
 │
-├── run.py                  # Script to launch the application
-├── requirements.txt        # Python dependencies
-└── README.md               # This file
+├── run.py                     # Script to launch the application
+├── requirements.txt           # Python dependencies
+└── README.md                  # This file
 ```
 
 ## Setup Instructions
