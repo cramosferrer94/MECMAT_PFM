@@ -1,12 +1,325 @@
-<!-- app/templates/index.html -->
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Página de Inicio</title>
+    <title>Manufacturing Scheduling System API</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f2f2f2;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .logo-bar {
+            display: flex;
+            justify-content: center;
+            gap: 60px;
+            margin-bottom: 20px;
+        }
+        .toggle-btn {
+            padding: 20px 40px;
+            font-size: 1.5rem;
+            margin: 0 8px;
+            border-radius: 6px;
+            }
+        .logo-bar img {
+            max-height: 80px;
+            width: auto;
+        }
+        h1 {
+            margin-bottom: 30px;
+        }
+        .sections {
+            display: flex;
+            justify-content: space-between;
+            gap: 40px;
+        }
+        .section {
+            flex: 1;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: center;
+        }
+        th {
+            background-color: #007BFF;
+            color: white;
+        }
+        input[type="number"] {
+            width: 100%;
+            padding: 4px;
+        }
+        button {
+            margin-top: 15px;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #555;
+        }
+        .results {
+            margin-top: 20px;
+            font-size: 15px;
+            text-align: left;
+        }
+        #predict-table,
+        #retrain-table {
+            font-size: 0.85rem;
+        }
+        #predict-table th,
+        #predict-table td,
+        #retrain-table th,
+        #retrain-table td {
+            padding: 4px 6px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to the Manufacturing Scheduling System App</h1>
-    <p>Welcome page showing UI.</p>
+    <div class="container">
+        <div class="logo-bar">
+            <img src="{{ url_for('static', filename='img/UOC-logo.png') }}" alt="UOC Logo">
+            <img src="{{ url_for('static', filename='img/URV-logo.png') }}" alt="URV Logo">
+        </div>
+
+        <h1>Manufacturing Scheduling System API</h1>
+        
+        <div id="graph-section" style="margin-top: 30px;">
+            <div id="graph" style="width: 100%; height: 400px;"></div>
+            <div id="metrics" style="margin-top: 20px; font-size: 15px;">
+                <strong>Model Metrics:</strong><br>
+                MAE: <span id="mae">-</span> |
+                RMSE: <span id="rmse">-</span> |
+                R²: <span id="r2">-</span>
+            </div>
+            
+        </div>        
+        
+        <div style="margin: 20px 0; text-align: center;">
+            <button id="btnPredict" class="toggle-btn">Predict</button>
+            <button id="btnRetrain" class="toggle-btn">Retrain</button>
+        </div>
+
+        <p><strong>Prediction Month:</strong> <span id="predict-month">Loading...</span></p>
+        <p><strong>Retraining Month:</strong> <span id="retrain-month">Loading...</span></p>
+
+        <div id="predict-section" style="display: none;">
+            <h2>Predict Next Month's Demand</h2>
+            <p id="predict-month"></p>
+            <table id="predict-table">
+                <thead>
+                    <tr><th>PROD_ID</th><th>PREVIOUS_MONTH_SALES</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <button onclick="submitPrediction()">Predict</button>
+            <div class="results" id="prediction-results"></div>
+        </div>
+
+        <div id="retrain-section" style="display: none;">
+            <h2>Add Real Demand to Retrain</h2>
+            <p id="retrain-month"></p>
+            <table id="retrain-table">
+                <thead>
+                    <tr><th>PROD_ID</th><th>PREVIOUS_MONTH_SALES</th><th>DEMAND_QUANT</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <button onclick="submitRetrain()">Submit & Retrain</button>
+            <div class="results" id="retrain-results"></div>
+        </div>
+
+    </div>
+
+    <script>
+        let nextMonth = null;
+        async function getLastMonth() {
+            const res = await fetch("/static/data/HISTORICAL DATA.csv");
+            const text = await res.text();
+            const lines = text.split('\n').filter(l => l.trim().length);
+            const last = lines[lines.length - 1].split(',')[0];
+            const date = new Date(last + "-01");
+            date.setMonth(date.getMonth() + 1);
+            const y = date.getFullYear();
+            const m = (date.getMonth() + 1).toString().padStart(2, '0');
+            return `${y}-${m}`;
+        }
+
+        function populateTables(nextMonth) {
+            document.getElementById("predict-month").innerText = `Forecast for ${nextMonth}`;
+            document.getElementById("retrain-month").innerText = `Add data for ${nextMonth}`;
+            const predictBody = document.querySelector("#predict-table tbody");
+            const retrainBody = document.querySelector("#retrain-table tbody");
+            for (let i = 1; i <= 10; i++) {
+                predictBody.innerHTML += `<tr><td>${i}</td><td><input type='number' step='any' name='sales-${i}'></td></tr>`;
+                retrainBody.innerHTML += `<tr><td>${i}</td><td><input type='number' step='any' name='sales-${i}'></td><td><input type='number' step='any' name='demand-${i}'></td></tr>`;
+            }
+        }
+
+        function showSection(section) {
+            document.getElementById("predict-section").style.display = section === "predict" ? "block" : "none";
+            document.getElementById("retrain-section").style.display = section === "retrain" ? "block" : "none";
+            document.getElementById("prediction-results").innerHTML = "";
+            document.getElementById("retrain-results").innerHTML    = "";
+            }
+
+        document.getElementById("btnPredict").addEventListener("click", () => showSection("predict"));
+        document.getElementById("btnRetrain").addEventListener("click", () => showSection("retrain"));
+
+        async function submitPrediction() {
+            const month = document.getElementById("predict-month").innerText.split(": ")[1];
+            const rows  = document.querySelectorAll("#predict-table tbody tr");
+            const data = Array.from(rows).map(row => ({
+                PROD_ID: parseInt(row.children[0].innerText),
+                PREVIOUS_MONTH_SALES: parseFloat(row.children[1].querySelector("input").value)||0
+            }));
+
+            const res  = await fetch("/predict", {
+                method: "POST",
+                headers:{"Content-Type":"application/json"},
+                body: JSON.stringify({ month, data })
+            });
+            const json = await res.json();
+
+            const out = json.predictions
+                .map(p => `Producto ${p.PROD_ID}: ${p.PREDICTED_DEMAND_QUANT}`)
+                .join("<br>");
+            document.getElementById("prediction-results").innerHTML = out;
+
+            if (json.capacity.overload) {
+                document.getElementById("prediction-results").innerHTML +=
+                `<br><b style="color:red">⚠️ Sobrecarga de ${json.capacity.value}% en ${json.month}</b>`;
+            }
+            }
+
+        async function submitRetrain() {
+            const month = document.getElementById("retrain-month").innerText.split(': ')[1];
+            const rows = document.querySelectorAll("#retrain-table tbody tr");
+            const data = Array.from(rows).map(row => ({
+                PROD_ID: parseInt(row.children[0].innerText),
+                PREVIOUS_MONTH_SALES: parseFloat(row.children[1].querySelector('input').value || 0),
+                DEMAND_QUANT: parseFloat(row.children[2].querySelector('input').value || 0)
+            }));
+            const res = await fetch("/retrain", {
+                method: "POST",
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ month, data })
+            });
+            const json = await res.json();
+            document.getElementById("retrain-results").innerHTML = `Model retrained with window: ${json.new_training_window.start} → ${json.new_training_window.end}`;
+        }
+
+        window.addEventListener("DOMContentLoaded", async () => {
+            try {
+                const { next_month } = await fetch("/last-month").then(r => r.json());
+                document.getElementById("predict-month").innerText = `Forecast for ${next_month}`;
+                document.getElementById("retrain-month").innerText = `Add data for ${next_month}`;
+                populateTables(next_month);
+                await loadGraphAndMetrics();
+//                showSection("predict");
+            } catch (e) {
+                console.error("Error initiating UI:", e);
+            }
+            });
+
+        async function loadGraphAndMetrics() {
+            const [histRes, prodRes, metricsRes] = await Promise.all([
+                fetch("/static/data/HISTORICAL DATA.csv"),
+                fetch("/static/data/PRODUCTION TIMES.csv"),
+                fetch("/metrics.json")
+            ]);
+
+            const histText = await histRes.text();
+            const prodText = await prodRes.text();
+            const metrics = await metricsRes.json();
+
+            const parseCSV = (text) => {
+                const [head, ...lines] = text.trim().split("\n");
+                const keys = head.split(",");
+                return lines.map(l => {
+                    const values = l.split(",");
+                    return Object.fromEntries(keys.map((k, i) => [k.trim(), values[i].trim()]));
+                });
+            };
+
+            const hist = parseCSV(histText);
+            const prod = Object.fromEntries(parseCSV(prodText).map(d => [d.PROD_ID, parseFloat(d.PROD_TIME)]));
+
+            const monthly = {};
+            for (const row of hist) {
+                const date = row.DEMAND_DATE;
+                const quant = parseFloat(row.DEMAND_QUANT);
+                const time = quant * (prod[row.PROD_ID] || 0);
+                if (!monthly[date]) monthly[date] = { demand: 0, time: 0 };
+                monthly[date].demand += quant;
+                monthly[date].time += time;
+            }
+
+            const months = Object.keys(monthly).sort();
+            const demands = months.map(m => monthly[m].demand);
+            const capacity = months.map(m => +(monthly[m].time / (24 * 60 * 30) * 100).toFixed(2));
+
+            Plotly.newPlot("graph", [
+                {
+                    x: months, y: demands,
+                    name: "Total Demand",
+                    type: "bar",
+                    marker: { color: "steelblue" }
+                },
+                {
+                    x: months, y: capacity,
+                    name: "Capacity Utilization (%)",
+                    type: "scatter",
+                    yaxis: "y2",
+                    mode: "lines+markers",
+                    line: { color: "crimson" }
+                }
+            ], {
+                title: "Monthly Demand vs. Capacity",
+                yaxis: { title: "Demand" },
+                yaxis2: {
+                    title: "Capacity (%)",
+                    overlaying: "y",
+                    side: "right",
+                    range: [0, 100]
+                },
+                xaxis: { 
+                    title: "Month"
+                },
+                height: 400,
+                legend: { x: 0, y: 1.2 }
+            });
+
+            document.getElementById("mae").textContent = metrics.mae;
+            document.getElementById("rmse").textContent = metrics.rmse;
+            document.getElementById("r2").textContent = metrics.r2;
+        }
+    </script>
 </body>
 </html>
