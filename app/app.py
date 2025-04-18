@@ -82,7 +82,6 @@ def predict():
     monthly_time   = merged["TOTAL_TIME"].sum()
     cap_pct        = round(monthly_time/total_capacity*100,2)
     overload_flag  = cap_pct > 100
-    alerts         = [month] if overload_flag else []
 
     # Build response
     response = {
@@ -95,7 +94,7 @@ def predict():
             }
             for r, p in zip(df.itertuples(index=False), preds)
         ],
-        "capacity": {"value": round(cap_pct,2), "overload": bool(overload_flag)},
+        "capacity": {"value": cap_pct, "overload": bool(overload_flag)},
         "alerts": [month] if bool(overload_flag) else []
     }
     return jsonify(response)
@@ -132,10 +131,26 @@ def retrain():
     model = new_model
 
     metrics = load_metrics()
+    
+    prod_times = pd.read_csv("app/PRODUCTION TIMES.csv")
+    latest_month = pd.to_datetime(month, format="%Y-%m")
+    current_month_data = hist[hist["DEMAND_DATE"] == latest_month].copy()
+    
+    # Unir con tiempos de producción y calcular el tiempo total necesario
+    merged = current_month_data.merge(prod_times, on="PROD_ID", how="left")
+    merged["TOTAL_TIME"] = merged["DEMAND_QUANT"] * merged["PROD_TIME"]
+    
+    # Capacidad mensual total (en minutos)
+    total_capacity = 24 * 60 * 30
+    used_time = merged["TOTAL_TIME"].sum()
+    cap_pct = round(used_time / total_capacity * 100, 2)
+    overload_flag = cap_pct > 100
+    
     return jsonify({
         "status": "ok",
         "new_training_window": {"start": window_start, "end": window_end},
-        "metrics": metrics
+        "metrics": metrics,
+        "capacity": {"value": cap_pct, "overload": overload_flag}
     })
 
 @app.route("/last-month", methods=["GET"])

@@ -110,8 +110,8 @@
 
         <h1>Manufacturing Scheduling System API</h1>
 
-        <div id="month-indicator" style="text-align: center; font-weight: bold; margin-bottom: 10px;">
-            Predict or Retrain the ML Model for <span id="current-month"></span>
+        <div id="month-indicator" style="text-align: center; margin-bottom: 10px;">
+            Predict or Retrain the ML Model for <span id="current-month" style="color: #2c763f; font-weight: bold;"></span>
         </div>
 
         <div style="margin: 20px 0; text-align: center;">
@@ -123,34 +123,35 @@
             <div id="graph" style="width: 100%; height: 400px;"></div>
             <div id="metrics" style="margin-top: 20px; font-size: 15px;">
                 <strong>Model Metrics:</strong><br>
-                MAE: <span id="mae">-</span> |
-                RMSE: <span id="rmse">-</span> |
-                R²: <span id="r2">-</span>
+                <span title="Mean Absolute Error: average of absolute prediction errors.">MAE: <span id="mae">-</span></span> |
+                <span title="Root Mean Squared Error: square root of average squared errors, penalizing larger errors more.">RMSE: <span id="rmse">-</span></span> |
+                <span title="R-squared: proportion of variance explained by the model. 1 = perfect prediction.">R²: <span id="r2">-</span></span>
+                <span id="metric-status" style="margin-left: 10px;"></span>
             </div>
             
         </div>        
         
         <div id="predict-section" style="display: none;">
-            <h2>Predict Next Month's Demand</h2>
+            <h2 style="font-size: 18px;">Predict Next Month's Demand</h2>
             <table id="predict-table">
                 <thead>
                     <tr><th>PROD_ID</th><th>PREVIOUS_MONTH_SALES</th></tr>
                 </thead>
                 <tbody></tbody>
             </table>
-            <button onclick="submitPrediction()">Predict</button>
+            <button onclick="submitPrediction()">Predict & Generate JSON</button>
             <div class="results" id="prediction-results"></div>
         </div>
 
         <div id="retrain-section" style="display: none;">
-            <h2>Add Real Demand to Retrain</h2>
+            <h2 style="font-size: 18px;">Add Real Demand to Retrain</h2>
             <table id="retrain-table">
                 <thead>
                     <tr><th>PROD_ID</th><th>PREVIOUS_MONTH_SALES</th><th>DEMAND_QUANT</th></tr>
                 </thead>
                 <tbody></tbody>
             </table>
-            <button onclick="submitRetrain()">Submit & Retrain</button>
+            <button onclick="submitRetrain()">Submit & Retrain Model</button>
             <div class="results" id="retrain-results"></div>
         </div>
 
@@ -233,7 +234,7 @@
             const json = await res.json();
 
             if (json.capacity && json.capacity.overload) {
-                document.getElementById("alert-text").innerText = "Alert: Production Capacity for the plant is over 100%.";
+                document.getElementById("alert-text").innerText = "⚠️ Alert: Forecasted demand exceeds available production capacity.";
                 document.getElementById("capacity-alert").style.display = "block";
             }
 
@@ -268,6 +269,12 @@
                 body: JSON.stringify({ month, data })
             });
             const json = await res.json();
+            if (json.capacity && json.capacity.overload) {
+                document.getElementById("alert-text").innerText = "⚠️ Alert: Forecasted demand exceeds available production capacity.";
+                document.getElementById("capacity-alert").style.display = "block";
+            } else {
+                document.getElementById("capacity-alert").style.display = "none";
+            }
             let msg = `Model retrained with window: ${json.new_training_window.start} → ${json.new_training_window.end}`;
             await loadGraphAndMetrics();
             const lastMonthData = await fetch("/last-month").then(r => r.json());
@@ -315,6 +322,7 @@
             const prod = Object.fromEntries(parseCSV(prodText).map(d => [d.PROD_ID, parseFloat(d.PROD_TIME)]));
 
             const monthly = {};
+            const demandByMonth = {};
             for (const row of hist) {
                 const date = row.DEMAND_DATE;
                 const quant = parseFloat(row.DEMAND_QUANT);
@@ -322,6 +330,8 @@
                 if (!monthly[date]) monthly[date] = { demand: 0, time: 0 };
                 monthly[date].demand += quant;
                 monthly[date].time += time;
+                if (!demandByMonth[date]) demandByMonth[date] = 0;
+                demandByMonth[date] += quant;
             }
 
             const months = Object.keys(monthly).sort();
@@ -344,16 +354,16 @@
                     line: { color: "crimson" }
                 }
             ], {
-                title: "Monthly Demand vs. Capacity",
-                yaxis: { title: "Demand" },
+                title: "Monthly Cumulative Demand and Capacity Rate",
+                yaxis: { title: "Total Product Demand" },
                 yaxis2: {
-                    title: "Capacity (%)",
+                    title: "Capacity Rate (%)",
                     overlaying: "y",
                     side: "right",
                     range: [0, 100]
                 },
                 xaxis: { 
-                    title: "Month"
+                    title: "Date"
                 },
                 height: 400,
                 legend: { x: 0, y: 1.2 }
@@ -362,6 +372,23 @@
             document.getElementById("mae").textContent = metrics.mae;
             document.getElementById("rmse").textContent = metrics.rmse;
             document.getElementById("r2").textContent = metrics.r2;
+
+            const avg_demand = Object.values(demandByMonth).reduce((a, b) => a + b, 0) / Object.keys(demandByMonth).length;
+            const mae_limit = avg_demand * 0.05;
+            const rmse_limit = avg_demand * 0.10;
+            const r2_limit = 0.8;
+
+            let failed = [];
+            if (metrics.mae > mae_limit) failed.push("MAE");
+            if (metrics.rmse > rmse_limit) failed.push("RMSE");
+            if (metrics.r2 < r2_limit) failed.push("R²");
+
+            const statusEmoji = failed.length === 0 ? "✅" : "❗";
+            document.getElementById("metric-status").textContent = statusEmoji;
+
+            if (failed.length > 0) {
+                alert("⚠️ Model metrics do not meet the objective for: " + failed.join(", "));
+            }
         }
     </script>
 </body>
