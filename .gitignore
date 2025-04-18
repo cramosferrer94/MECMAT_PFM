@@ -1,0 +1,61 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.venv.bak/
+env.bak/
+
+# System files
+.DS_Store
+
+# IDE/editor configs
+.vscode/
+.idea/
+.spyderproject
+.spyproject
+
+# Logs
+*.log
+
+# Flask cache & instance data
+instance/
+.webassets-cache
+
+# Local history
+.local_history/
+
+# Pytest & testing
+.pytest_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# Mypy & Pyre
+.mypy_cache/
+.pyre/
+
+# Production model & metrics
+model/LR_schedule_model.pkl
+model/metrics.json
+
+# Temporary prediction files
+*.json
+*.xlsx
+*.csv
+
+# User uploads
+app/static/data/*.csv
+
+# OS metadata
+Thumbs.db
+ehthumbs.db
