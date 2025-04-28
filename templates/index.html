@@ -275,6 +275,15 @@
             } else {
                 document.getElementById("capacity-alert").style.display = "none";
             }
+            const retrainBlob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
+            const retrainUrl = URL.createObjectURL(retrainBlob);
+            const retrainDownload = document.createElement("a");
+            retrainDownload.href = retrainUrl;
+            retrainDownload.download = `retrain_${month}.json`;
+            document.body.appendChild(retrainDownload);
+            retrainDownload.click();
+            document.body.removeChild(retrainDownload);
+            URL.revokeObjectURL(retrainUrl);
             let msg = `Model retrained with window: ${json.new_training_window.start} → ${json.new_training_window.end}`;
             await loadGraphAndMetrics();
             const lastMonthData = await fetch("/last-month").then(r => r.json());
